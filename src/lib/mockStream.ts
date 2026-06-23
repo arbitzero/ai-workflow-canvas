@@ -4,7 +4,7 @@
 //      渲染层必须容错。
 //   2) 不能每来一个 token 就整段重新解析渲染，否则越到后面越卡（见 FlowCanvas 的 rAF 合并）。
 //
-// 后续可替换为 fetch('/api/chat') 读取真实 LLM 的 SSE 流（由轻量 Node 服务转发）。
+// 当缺少 API Key 或服务未启动时，chatStream 会回退到这里的模拟流，保证 demo 仍可运行。
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 

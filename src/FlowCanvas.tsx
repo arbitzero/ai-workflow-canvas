@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -18,7 +18,7 @@ import type { AppNode } from './types'
 import { InputNode } from './nodes/InputNode'
 import { LlmNode } from './nodes/LlmNode'
 import { OutputNode } from './nodes/OutputNode'
-import { mockStream } from './lib/mockStream'
+import { streamLLM } from './lib/chatStream'
 
 // nodeTypes 必须是稳定引用，否则 React Flow 每次渲染都会重建节点并告警。
 const nodeTypes: NodeTypes = {
@@ -29,7 +29,7 @@ const nodeTypes: NodeTypes = {
 
 const initialNodes: AppNode[] = [
   { id: 'in', type: 'input', position: { x: 0, y: 120 }, data: { prompt: '解释一下大画布性能优化' } },
-  { id: 'llm', type: 'llm', position: { x: 320, y: 130 }, data: { model: 'mock-llm', status: 'idle' } },
+  { id: 'llm', type: 'llm', position: { x: 320, y: 130 }, data: { model: '检测中…', status: 'idle' } },
   { id: 'out', type: 'output', position: { x: 620, y: 40 }, data: { content: '' } },
 ]
 
@@ -43,6 +43,27 @@ export function FlowCanvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(initialEdges)
   const [running, setRunning] = useState(false)
   const { getNodes, updateNodeData } = useReactFlow()
+
+  // 启动时探测后端实际使用的 provider/模型，写回 LLM 节点显示。
+  useEffect(() => {
+    let cancelled = false
+    const setModel = (model: string) => {
+      const llm = getNodes().find((n) => n.type === 'llm')
+      if (llm) updateNodeData(llm.id, { model })
+    }
+    fetch('/api/health')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { configured?: boolean; model?: string } | null) => {
+        if (cancelled) return
+        setModel(data?.configured && data.model ? data.model : 'mock（未配置 key）')
+      })
+      .catch(() => {
+        if (!cancelled) setModel('mock（服务未启动）')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [getNodes, updateNodeData])
 
   const onConnect = useCallback(
     (c: Connection) => setEdges((eds) => addEdge({ ...c, animated: true }, eds)),
@@ -72,7 +93,7 @@ export function FlowCanvas() {
       raf = 0
     }
 
-    for await (const chunk of mockStream(prompt)) {
+    for await (const chunk of streamLLM(prompt)) {
       buffer += chunk
       if (!raf) raf = requestAnimationFrame(flush)
     }
